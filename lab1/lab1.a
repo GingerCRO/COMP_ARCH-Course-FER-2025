@@ -1,0 +1,87 @@
+                MOV R9,  #0x700         ; ucitavanje adrese pocetnog podatka u R9
+                MOV R10, #0x2000        ; ucitavanje adrese odredista u R10
+                LDR R11, ZADNJI1        ; spremi vrijednost zadnjeg podatka u R11             
+                LDR R12, ZADNJI2        ; spremi vrijednost koju zapisujemo na kraj rezultata u R12
+
+CITAJ           LDR R1, [R9], #4        ; ucitavanje oznake operacije u R1
+                CMP R1, R11             ; jesmo li dosli do kraja podataka?
+                BEQ KRAJ                ; ako smo gotovi s ucitavanjem podataka idi na labelu KRAJ
+                CMP R1, #0              ; zbrajanje?
+                BEQ ZBROJI              ; idi na labelu ZBRAJANJE ako trebamo zbrajati
+                CMP R1, #1              ; oduzimanje?
+                BEQ ODUZMI              ; idi na labelu ODUZIMANJE ako trebamo oduzimati
+                CMP R1, #2              ; mnozenje?
+                BEQ MNOZENJE            ; idi na labelu MNOZENJE ako trebamo oduzimati
+                CMP R1, #3              ; dijeljenje?
+                BEQ PODIJELI            ; idi na labelu PODIJELI ako trebamo dijeliti
+
+ZBROJI          LDR R2, [R9], #4        ; ucitavanje prvog operanda u R2
+                LDR R3, [R9], #4        ; ucitavanje drugog operanda u R3
+                ADD R4, R2, R3          ; zbrajanje R2 i R3 te upis rezultata u R4
+                STR R4, [R10], #4       ; spremanje sadržaja R4 na adresu iz R10
+                B CITAJ                 ; skok natrag na citanje operanada
+
+ODUZMI          LDR R2, [R9], #4        ; ucitavanje prvog operanda u R2
+                LDR R3, [R9], #4        ; ucitavanje drugog operanda u R3
+                SUB R4, R2, R3          ; racunanje R2-R3 te spremanje u R4
+                STR R4, [R10], #4       ; spremanje sadržaja R3 na adresu iz R10
+                B CITAJ                 ; skok natrag na citanje operanada
+
+MNOZENJE        LDR R2, [R9], #4        ; ucitavanje prvog faktora u R2
+                LDR R3, [R9], #4        ; ucitavanje drugog faktora u R3
+                MOV R5, #0              ; inicijalizacija R0 = 0 (prezdnak je +)
+                TST R2, R2              ; testiraj prvi faktor, osvjezi CPSR -> za provjeru je li >= 0
+                EORMI R5, R5, #1        ; ako je prvi faktor negativan, invertiraj R5
+                TST R3, R3              ; testiraj drugi faktor, osvjezi CPSR -> za provjeru je li >= 0
+                EORMI R5, R5, #1        ; ako je drugi faktor negativan, invertiraj R5
+                
+                MUL R4, R2, R3          ; racunanje R2 * R3 te spremanje rezultata u R4
+                CMP R5, #0              ; kakav je predznak?
+                RSBLT R4, R4, #0        ; ako je predznak negativan, rezultat je negativnog predznaka
+                STR R4, [R10], #4       ; spremanje sadržaja R4 na adresu iz R10
+                B CITAJ                 ; skok natrag na citanje operanada
+
+PODIJELI        LDR R2, [R9], #4        ; ucitavanje djeljenjika u R2
+                LDR R3, [R9], #4        ; ucitavanje djelitelja u R3
+                CMP R3, #0              ; provjeri je li djelitelj jednak nula
+                BEQ DIJELI_0            ; ako je djelitelj = 0, idi na labelu DIJELI_0
+                LDR SP, STACK           ; inicijalizacija stack pointera na adresu zapisanu u labeli STACK
+                STMFD SP!, {R3, R2}     ; spremi na stog vrijednosti operanada, odnosno vrijednosti zapisane u R2 i R3
+                MOV R5, #0              ; u registar R5 spremamo 0 ili 1 ovisno o predznaku (+ je 0, - je 1)
+                TST R2, R2              ; testiraj djeljenika, osvjezi CPSR -> za provjeru je li >= 0
+                EORMI R5, R5, #1        ; ako je djeljenik negativan, invertiraj R5
+                TST R3, R3              ; testiraj djelitelja, osvjezi CPSR -> za provjeru je li >= 0
+                EORMI R5, R5, #1        ; ako je djelitelj negativan, invertiraj R5
+
+DIJELI          LDMFD SP!, {R2, R3}     ; sa stoga djeljenika spremi u R2, a djelitelja u R3
+                MOV R0, #0              ; R0 koristimo za spremanje rezultata dijeljenja
+                TST R2, R2              ; testiraj sadrzaj R2 i osvjezi CPSR
+                RSBMI R2, R2, #0        ; R2 = 0 - R2 ako je sadrzaj R2 negativan
+                TST R3, R3              ; testiraj sadrzaj R3 i osvjezi CPSR
+                RSBMI R3, R3, #0        ; R3 = 0 - R3 ako je sadrzaj R3 negativan
+D_PETLJA        CMP R2, R3              ; je li djeljenik >= djelitelj
+                BLO D_KRAJ              ; ako je djeljenik < djelitelj -> izadi iz petlje i vrati se u citanje sljedećih operanada
+                SUB R2, R2, R3          ; R2 = R2 - R3 (postupak dijeljenja uzastopnim oduzimanjem)
+                ADD R0, R0, #1          ; kvocijent = kvocijent + 1 (postupak dijeljenja uzastopnim oduzimanjem)
+                B D_PETLJA              ; nastavljamo s dijeljenjem
+D_KRAJ          CMP R5, #0              ; kakav je predznak?
+                RSBGT R0, R0, #0        ; ako je predznak pozitivan, promijeni predznak rezultata
+                STR R0, [R10], #4       ; spremanje sadržaja R0 na adresu iz R10
+                B CITAJ                 ; povratak na čitanje operanada
+
+DIJELI_0        MOV R0, #0              ; ako je djelitelj = 0, vrati 0 kao rezultat
+                B CITAJ                 ; povratak na citanje operanada
+
+KRAJ            MOV R3, R12             ; na kraju izvodenja programa stavi 0xFFFFFFFF u R3
+                STR R3, [R10]           ; sadržaj registra R3 spremi na adresu spremljenu u R10
+                SWI 0x123456            ; zavrsi simulaciju u simulatoru
+
+ZADNJI1         DW 0x80808080           ; vrijednost zadnjeg podatka nakon kojeg se simulacija zavrsava
+ZADNJI2         DW 0xFFFFFFFF           ; zadnji podatak koji se upisuje na kraj rezultata
+STACK           DW 0x10000              ; adresa inicijalizacije stoga
+
+                ORG 0x700               ; adresa na kojoj pocinje upisivanje ulaznih podataka
+                DW 3, 0xFFFFFEFF, 0x00000010, 1, 0x000001F4, 0xFFFFFD44, 2, 0xFFFFFFFE, 0x0000000A, 3, 0xFFFFF000, 0xFFFFFFC0, 0x80808080
+
+                ORG 0x2000
+                DW 0, 0, 0, 0, 0
