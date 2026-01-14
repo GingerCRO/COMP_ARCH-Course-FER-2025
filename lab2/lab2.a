@@ -1,0 +1,197 @@
+        ORG 0x00
+        B INIT                          ; skoči na INIT potprogram
+
+        ORG 0x18
+        B IRQ                           ; skoči na potprogram IRQ za obradu iznimke
+
+INIT    MOV SP, #0x10000                ; inicijalizacija stoga  
+
+        MOV R1, #0x700                  ; spremi hex broj 0x700 u registar R1
+        LDR R1, [R1]                    ; spremi sadržaj adrese 0x700 u R1 --> spremi adresu od GPIO1 u R1
+        ADD R1, R1, #4                  ; spremi adresu od PB_DR u registar R1
+
+        MOV R2, #0x800                  ; spremi hex broj 0x800 u registar R2
+        LDR R2, [R2]                    ; spremi sadržaj adrese 0x800 u R2 --> spremi adresu od GPIO2 u R2
+
+        MOV R3, #0b11100000             ; zadaj smjer vrata A od GPIO2 sklopa u registar R3 --> LED diode su izlaz, sve ostalo ulaz
+        STR R3, [R2, #8]                ; spremi smjer vrata A od GPIO2 na adresu bazna_adr + 8, odnosno na PA_DDR
+
+        MOV R4, #0x900                  ; spremi hex broj 0x900 u registar R4
+        LDR R4, [R4]                    ; spremi sadržaj adrese 0x900 u R4 --> spremi adresu od RTC sklopa
+
+START   MOV R5, #0b00000000             ; spremi binaran broj 0 u registar R5
+        STR R5, [R2, #0]                ; isključi sve LED diode
+        MOV R0, #0x0D                   ; spremi znak 0x0D (brisanje sadržaja ulaznog registra)
+        BL LCDWR                        ; izbriši sadržaj ulaznog registra 
+        MOV R0, #0x57                   ; spremi znak 'W'
+        BL LCDWR                        ; ispiši znak 'W'
+        MOV R0, #0x45                   ; spremi znak 'E'
+        BL LCDWR                        ; ispiši znak 'E'
+        MOV R0, #0x4C                   ; spremi znak 'L'
+        BL LCDWR                        ; ispiši znak 'L'
+        MOV R0, #0x43                   ; spremi znak 'C'
+        BL LCDWR                        ; ispiši znak 'C'
+        MOV R0, #0x4F                   ; spremi znak 'O'
+        BL LCDWR                        ; ispiši znak 'O'
+        MOV R0, #0x4D                   ; spremi znak 'M'
+        BL LCDWR                        ; ispiši znak 'M'
+        MOV R0, #0x45                   ; spremi znak 'E'
+        BL LCDWR                        ; ispiši znak 'E'
+        MOV R0, #0x0A                   ; spremi znak 0x0A (ispis znakova na zaslon)
+        BL LCDWR                        ; ispiši sve znakove na LCD display
+
+TIPKA   LDR R3, [R2, #0]                ; u registar R3 spremi DR sadržaj od GPIO2
+        TST R3, #0x01                   ; je li tipka kliknuta?
+        BEQ TIPKA                       ; sve dok tipka nije kliknuta, odi ponovo na potprogram TIPKA 
+
+        ; resetiramo RTC, odnosno klikom na gumb pokrećemo ponovno brojanje ciklusa od 10 sekundi
+        MOV   R6, #0                    ; spremi broj 0 u registar R6
+        STR   R6, [R4, #0x10]           ; spremi sadržaj od R6 u RTC registar CR --> zaustavi RTC
+        STR   R6, [R4, #0x0C]           ; spremi sadržaj od R6 u RTC registar LR --> reset brojač
+        STR   R6, [R4, #0x08]           ; spremi sadržaj od R6 u RTC registar STAT/EOI --> očisti prekid IRQ
+        LDR   R7, GOTOVO10              ; spremi sadržaj labele GOTOVO10 u registar R7
+        STR   R6, [R7]                  ; spremi sadržaj od R6 na adresu zapisanu u R7 --> spremi 0 na labelu GOTOVO10
+        MOV   R6, #1                    ; spremi broj 1 u registar R6
+        STR   R6, [R4, #0x10]           ; spremi sadržaj od R6 u RTC registar CR --> ponovo pokreni RTC
+
+        ; stog za način IRQ
+        MSR CPSR, #0b11010010           ; prelazak u način IRQ
+        MOV R13, #0x10000               ; inicijalizacija R13_irq
+        
+        ; stog za način SVC
+        MSR CPSR, #0b11010011           ; prelazak u način SVC
+        MOV R13, #0xFC00                ; inicijalizacija R13_svc
+
+        MOV R0, #0                      ; spremi broj 0 u registar R0
+        STR R0, [R4, #0x0C]             ; sadržaj registra R0 spremi u RTC registar LR --> resetiraj brojač na 0
+        STR R0, [R4, #0x08]             ; sadržaj registra R0 spremi u RTC registar STAT/EOI --> izbriši potencijali prošli prekid
+        LDR R0, CONST                   ; spremi sadržaj labele CONST u registar R0
+        STR R0, [R4, #0x04]             ; sadržaj registra R0 spremi u RTC registar MR --> broji do 2650
+        MOV R0, #1                      ; spremi broj 1 u registar R0
+        STR R0, [R4, #0x10]             ; sadržaj registra R0 spremi u RTC registar CR --> počni ponovo brojati od 0
+
+        MRS R0, CPSR                    ; spremi sadržaj CPSR registra u registar R0
+        BIC R0, R0, #0x80               ; obriši 7. bit registra R0 --> omogući IRQ prekid
+        MSR CPSR, R0                    ; spremi sadržaj registra R0 u CPSR registar
+
+CIKLUS  MOV R0, #0x0D                   ; spremi znak 0x0D (brisanje sadržaja ulaznog registra)
+        BL LCDWR                        ; izbriši sadržaj ulaznog registra
+        MOV R0, #0x48                   ; spremi znak 'H'
+        BL LCDWR                        ; ispiši znak 'H'
+        MOV R0, #0x45                   ; spremi znak 'E'
+        BL LCDWR                        ; ispiši znak 'E'
+        MOV R0, #0x41                   ; spremi znak 'A'
+        BL LCDWR                        ; ispiši znak 'A'
+        MOV R0, #0x54                   ; spremi znak 'T'
+        BL LCDWR                        ; ispiši znak 'T'
+        MOV R0, #0x49                   ; spremi znak 'I'
+        BL LCDWR                        ; ispiši znak 'I'
+        MOV R0, #0x4E                   ; spremi znak 'N'
+        BL LCDWR                        ; ispiši znak 'N'
+        MOV R0, #0x47                   ; spremi znak 'G'
+        BL LCDWR                        ; ispiši znak 'G'
+        MOV R0, #0x0A                   ; spremi znak 0x0A (ispis znakova na zaslon)
+        BL LCDWR                        ; ispiši sve znakove na LCD display
+
+        MOV R5, #0b00100000             ; spremi oznaku za uključivanje crvene LED diode u R5
+        STR R5, [R2, #0]                ; uključi crvenu LED diodu
+        BL CEKAJ10                      ; pričekaj 10 sekundi
+
+        MOV R0, #0x0D                   ; spremi znak 0x0D (brisanje sadržaja ulaznog registra)
+        BL LCDWR                        ; izbriši sadržaj ulaznog registra
+        MOV R0, #0x43                   ; spremi znak 'C'
+        BL LCDWR                        ; ispiši znak 'C'
+        MOV R0, #0x4F                   ; spremi znak 'O'
+        BL LCDWR                        ; ispiši znak 'O'
+        MOV R0, #0x46                   ; spremi znak 'F'
+        BL LCDWR                        ; ispiši znak 'F'
+        MOV R0, #0x46                   ; spremi znak 'F'
+        BL LCDWR                        ; ispiši znak 'F'
+        MOV R0, #0x45                   ; spremi znak 'E'
+        BL LCDWR                        ; ispiši znak 'E'
+        MOV R0, #0x45                   ; spremi znak 'E'
+        BL LCDWR                        ; ispiši znak 'E'
+        MOV R0, #0x0A                   ; spremi znak 0x0A (ispis znakova na zaslon)
+        BL LCDWR                        ; ispiši sve znakove na LCD display
+
+        MOV R5, #0b01000000             ; spremi oznaku za uključivanje žute LED diode u R5
+        STR R5, [R2, #0]                ; uključi žutu LED diodu
+        BL CEKAJ10                      ; pričekaj 10 sekundi
+
+        MOV R0, #0x0D                   ; spremi znak 0x0D (brisanje sadržaja ulaznog registra)
+        BL LCDWR                        ; izbriši sadržaj ulaznog registra
+        MOV R0, #0x4D                   ; spremi znak 'M'
+        BL LCDWR                        ; ispiši znak 'M'
+        MOV R0, #0x49                   ; spremi znak 'I'
+        BL LCDWR                        ; ispiši znak 'I'
+        MOV R0, #0x4C                   ; spremi znak 'L'
+        BL LCDWR                        ; ispiši znak 'L'
+        MOV R0, #0x4B                   ; spremi znak 'K'
+        BL LCDWR                        ; ispiši znak 'K'
+        MOV R0, #0x0A                   ; spremi znak 0x0A (ispis znakova na zaslon)
+        BL LCDWR                        ; ispiši sve znakove na LCD display
+
+        MOV R5, #0b10000000             ; spremi oznaku za uključivanje zelene LED diode u R5
+        STR R5, [R2, #0]                ; uključi zelenu LED diodu
+        BL CEKAJ10                      ; pričekaj 10 sekundi
+
+        MOV R0, #0x0D                   ; spremi znak 0x0D (brisanje sadržaja ulaznog registra)
+        BL LCDWR                        ; izbriši sadržaj ulaznog registra
+        MOV R0, #0x44                   ; spremi znak 'D'
+        BL LCDWR                        ; ispiši znak 'D'
+        MOV R0, #0x4F                   ; spremi znak 'O'
+        BL LCDWR                        ; ispiši znak 'O'
+        MOV R0, #0x4E                   ; spremi znak 'N'
+        BL LCDWR                        ; ispiši znak 'N'
+        MOV R0, #0x45                   ; spremi znak 'E'
+        BL LCDWR                        ; ispiši znak 'E'
+        MOV R0, #0x0A                   ; spremi znak 0x0A (ispis znakova na zaslon)
+        BL LCDWR                        ; ispiši sve znakove na LCD display
+
+        MOV R5, #0b11100000             ; spremi oznaku za uključivanje svih LED dioda u R5
+        STR R5, [R2, #0]                ; uključi sve LED diode
+        BL CEKAJ10                      ; pričekaj 10 sekundi
+
+        B START                         ; ponovi cijeli ciklus
+
+        ORG 0x700
+        DW 0xFFFF0F00                   ; adresa GPIO1 sklopa
+
+        ORG 0x800
+        DW 0xFFFF0B00                   ; adresa GPIO2 sklopa
+
+        ORG 0x900
+        DW 0xFFFF0E00                   ; adresa RTC sklopa
+
+LCDWR   STMFD R13!, {R0}                ; spremi kontekst
+        AND R0, R0, #0x7F               ; postavi bit 7 u nulu (za svaki slučaj, jer je tu mogla biti 1)
+        STRB R0, [R1]                   ; pošalji znak
+        ORR R0, R0, #0x80               ; postavi bit 7 u jedan --> podigni impuls
+        STRB R0, [R1]                   ; pošalji znak
+        AND R0, R0, #0x7F               ; postavi bit 7 u nulu --> spusti impuls
+        STRB R0, [R1]                   ; pošalji znak
+        LDMFD R13!, {R0}                ; obnovi kontekst
+        MOV PC, LR                      ; povratak iz potprograma
+
+CEKAJ10                                 ; potprogram za cekanje 10 sekundi
+        LDR R0, GOTOVO10                ; ucitaj sadržaj zapisan u labeli GOTOVO10 u registar R0
+CEKAJ   LDR R6, [R0]                    ; spremi vrijednost iz R0 u R6
+        CMP R6, #1                      ; je li vrijednost zapisana u R6 jednaka 1?
+        BNE CEKAJ                       ; ako nije, vrati se na CEKAJ
+        MOV R6, #0                      ; spremi 0 u R6
+        STR R6, [R0]                    ; spremi sadržaj R6 na adresu zapisanu u R0 --> upiši 0 u GOTOVO10
+        MOV PC, LR                      ; povratak iz potprograma
+
+IRQ     STMFD SP!, {R0, R1}             ; spremi kontekst
+        MOV R0, R4                      ; spremi baznu adresu od RTC-a u R0
+        MOV R1, #0                      ; spremi 0 u R1 
+        STR R1, [R0, #0x0C]             ; spremi 0 u RTC registar LR --> resetiraj brojač
+        STR R1, [R0, #0x08]             ; spremi 0 u RTC registar STAT/EOI --> omogući novi prekid u sljedećem ciklusu
+        LDR R0, GOTOVO10                ; učitaj labelu GOTOVO10 u registar R0
+        MOV R1, #1                      ; spremi 1 u R1
+        STR R1, [R0]                    ; spremi 1 na adresu iz R0 --> spremi 1 na GOTOVO10
+        LDMFD SP!, {R0, R1}             ; obnovi kontekst
+        SUBS PC, LR, #4                 ; povratak iz prekida i obnova CPSR zastavica
+
+CONST   DW 2650                         ; broj ciklusa koje program mora obraditi da bismo dobili čekanje od 10 sekundi
+GOTOVO10 DW 0                           ; inicijaliziraj flag na 0
